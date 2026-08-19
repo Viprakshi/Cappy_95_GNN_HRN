@@ -15,31 +15,57 @@ def main():
     player_ball_edges = int((graph.edge_type == PLAYER_BALL_EDGE_TYPE).sum().item())
 
     print("\n========== GRAPH INFORMATION ==========")
-    print(f"Number of nodes: {graph.num_nodes}")
-    print(f"Number of edges: {graph.num_edges}")
-    print(f"Node feature shape: {graph.x.shape}")
-    print(f"Edge index shape: {graph.edge_index.shape}")
-    print(f"Edge feature shape: {graph.edge_attr.shape}")
-    print(f"Edge type shape: {graph.edge_type.shape}")
-    print(f"Player nodes: {int((graph.node_type == 0).sum().item())}")
-    print(f"Ball nodes: {int((graph.node_type == 1).sum().item())}")
-    print(f"Player-player edges: {player_player_edges}")
-    print(f"Player-ball edges: {player_ball_edges}")
+
+    print("Number of nodes:", graph.num_nodes)
+    print("Number of edges:", graph.num_edges)
+
+    print("Node feature shape:", graph.x.shape)
+    print("Edge index shape:", graph.edge_index.shape)
+    print("Edge feature shape:", graph.edge_attr.shape)
+    print("Edge type shape:", graph.edge_type.shape)
+
+    num_players = int(
+        (graph.node_type == 0).sum()
+    )
+
+    num_balls = int(
+        (graph.node_type == 1).sum()
+    )
+
+    num_player_player_edges = int(
+        (graph.edge_type == 0).sum()
+    )
+
+    num_player_ball_edges = int(
+        (graph.edge_type == 1).sum()
+    )
+
+    print("Player nodes:", num_players)
+    print("Ball nodes:", num_balls)
+
+    print(
+        "Player-player edges:",
+        num_player_player_edges
+    )
+
+    print(
+        "Player-ball edges:",
+        num_player_ball_edges
+    )
 
     print("\nExample edge:")
-    for idx in range(min(2, graph.edge_index.size(1))):
-        src = int(graph.edge_index[0, idx].item())
-        dst = int(graph.edge_index[1, idx].item())
-        edge_kind = (
-            "PLAYER_PLAYER"
-            if int(graph.edge_type[idx].item()) == PLAYER_PLAYER_EDGE_TYPE
-            else "PLAYER_BALL"
-        )
-        attrs = graph.edge_attr[idx].tolist()
-        print(f"source={src} target={dst} type={edge_kind} attributes={attrs}")
+
+    source = graph.edge_index[0, 0].item()
+    target = graph.edge_index[1, 0].item()
+    edge_kind = graph.edge_type[0].item()
+    attributes = graph.edge_attr[0].tolist()
+
+    print("Source:", source)
+    print("Target:", target)
+    print("Edge type:", edge_kind)
+    print("Attributes:", attributes)
 
     print("\n========================================")
-
 
 if __name__ == "__main__":
     main()

@@ -1,58 +1,138 @@
-from __future__ import annotations
-
-from typing import Optional
-
+import numpy as np
 import matplotlib.pyplot as plt
 
 
-def visualize_graph(graph, players=None, ball=None, title: str = "Volleyball frame graph"):
-    """Visualize a single-frame volleyball graph using graph.x coordinates.
+PLAYER_NODE_TYPE = 0
+BALL_NODE_TYPE = 1
 
-    The graph stores normalized node positions in graph.x[:, 2] and graph.x[:, 3], and
-    node types are encoded in graph.node_type. Player labels come from graph.player_ids.
+PLAYER_PLAYER_EDGE_TYPE = 0
+PLAYER_BALL_EDGE_TYPE = 1
+
+
+def visualize_graph(graph, title="Volleyball Graph"):
     """
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.set_title(title)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_xlabel("x_norm")
-    ax.set_ylabel("y_norm")
+    Visualize the volleyball graph using positions stored
+    directly inside graph.x.
+    """
 
-    node_x = graph.x[:, 2].detach().cpu().numpy()
-    node_y = graph.x[:, 3].detach().cpu().numpy()
+    node_features = graph.x.detach().cpu().numpy()
+    edge_index = graph.edge_index.detach().cpu().numpy()
+    edge_type = graph.edge_type.detach().cpu().numpy()
     node_type = graph.node_type.detach().cpu().numpy()
 
-    player_mask = node_type[:, 0] == 1
-    ball_mask = node_type[:, 1] == 1
+    # Position is stored at feature indices 2 and 3
+    x_positions = node_features[:, 2]
+    y_positions = node_features[:, 3]
 
-    for idx in np.where(player_mask)[0]:
-        x = float(node_x[idx])
-        y = float(node_y[idx])
-        player_label = graph.player_ids[idx] if idx < len(graph.player_ids) else idx
-        ax.scatter(x, y, color="tab:blue", s=90)
-        ax.text(x + 0.01, y + 0.01, str(player_label), fontsize=9)
+    player_mask = node_type == PLAYER_NODE_TYPE
+    ball_mask = node_type == BALL_NODE_TYPE
 
-    for idx in np.where(ball_mask)[0]:
-        x = float(node_x[idx])
-        y = float(node_y[idx])
-        ax.scatter(x, y, color="tab:orange", s=120, marker="o")
-        ax.text(x + 0.01, y + 0.01, "BALL", fontsize=9)
+    player_indices = np.where(player_mask)[0]
+    ball_indices = np.where(ball_mask)[0]
 
-    if graph.edge_index is not None and graph.edge_attr is not None:
-        for edge_idx in range(graph.edge_index.size(1)):
-            src = int(graph.edge_index[0, edge_idx].item())
-            dst = int(graph.edge_index[1, edge_idx].item())
-            if src >= graph.num_nodes or dst >= graph.num_nodes:
-                continue
+    plt.figure(figsize=(12, 7))
 
-            edge_type = int(graph.edge_type[edge_idx].item())
-            color = "tab:green" if edge_type == 0 else "tab:red"
-            x_src = float(graph.x[src, 2])
-            y_src = float(graph.x[src, 3])
-            x_dst = float(graph.x[dst, 2])
-            y_dst = float(graph.x[dst, 3])
+    # --------------------------------------------------------
+    # Draw edges first
+    # --------------------------------------------------------
 
-            ax.plot([x_src, x_dst], [y_src, y_dst], color=color, alpha=0.6, linewidth=1)
+    for edge_idx in range(edge_index.shape[1]):
+
+        source = edge_index[0, edge_idx]
+        target = edge_index[1, edge_idx]
+
+        x1 = x_positions[source]
+        y1 = y_positions[source]
+
+        x2 = x_positions[target]
+        y2 = y_positions[target]
+
+        if edge_type[edge_idx] == PLAYER_PLAYER_EDGE_TYPE:
+            linestyle = "-"
+            alpha = 0.25
+
+        elif edge_type[edge_idx] == PLAYER_BALL_EDGE_TYPE:
+            linestyle = "--"
+            alpha = 0.5
+
+        else:
+            linestyle = ":"
+            alpha = 0.2
+
+        plt.plot(
+            [x1, x2],
+            [y1, y2],
+            linestyle=linestyle,
+            alpha=alpha
+        )
+
+    # --------------------------------------------------------
+    # Players
+    # --------------------------------------------------------
+
+    plt.scatter(
+        x_positions[player_indices],
+        y_positions[player_indices],
+        s=100,
+        label="Player"
+    )
+
+    # --------------------------------------------------------
+    # Ball
+    # --------------------------------------------------------
+
+    plt.scatter(
+        x_positions[ball_indices],
+        y_positions[ball_indices],
+        s=150,
+        marker="o",
+        label="Ball"
+    )
+
+    # --------------------------------------------------------
+    # Player labels
+    # --------------------------------------------------------
+
+    player_ids = getattr(
+        graph,
+        "player_ids",
+        None
+    )
+
+    if player_ids is not None:
+
+        for node_idx, player_id in zip(
+            player_indices,
+            player_ids
+        ):
+
+            plt.annotate(
+                f"P{player_id}",
+                (
+                    x_positions[node_idx],
+                    y_positions[node_idx]
+                ),
+                xytext=(5, 5),
+                textcoords="offset points"
+            )
+
+    # --------------------------------------------------------
+    # Formatting
+    # --------------------------------------------------------
+
+    plt.xlabel("Normalized X")
+    plt.ylabel("Normalized Y")
+
+    plt.title(title)
+
+    plt.xlim(0, 1)
+
+    # Image coordinates increase downward.
+    plt.ylim(1, 0)
+
+    plt.legend()
+    plt.grid(alpha=0.2)
 
     plt.tight_layout()
-    return fig, ax
+
+    plt.show()
