@@ -213,7 +213,12 @@ class VolleyballGraphBuilder:
         return feature_vector
 
     def build_edges(self, players, ball, court):
-        """Build directed player-player and player-ball edges with normalized attributes."""
+        """Build directed edges with normalized relative_x/relative_y values.
+
+        The relative_x and relative_y fields are normalized by court width and height,
+        not clipped to [0, 1]. As a result, the Euclidean distance is computed on the
+        normalized coordinates and is therefore approximately in [0, sqrt(2)].
+        """
         edge_list = []
         edge_attr = []
         edge_types = []
@@ -227,27 +232,34 @@ class VolleyballGraphBuilder:
 
                 p1 = players[i]
                 p2 = players[j]
-                dx = (float(p2["x"]) - float(p1["x"])) / width
-                dy = (float(p2["y"]) - float(p1["y"])) / height
-                distance = math.sqrt(dx ** 2 + dy ** 2)
-                same_team = float(p1.get("team", -1) == p2.get("team", -1))
+                relative_x = (float(p2["x"]) - float(p1["x"])) / width
+                relative_y = (float(p2["y"]) - float(p1["y"])) / height
+                distance = math.sqrt(relative_x ** 2 + relative_y ** 2)
+
+                team_a = p1.get("team")
+                team_b = p2.get("team")
+                same_team = (
+                    1.0
+                    if team_a in (0, 1) and team_b in (0, 1) and team_a == team_b
+                    else 0.0
+                )
 
                 edge_list.append([i, j])
-                edge_attr.append([dx, dy, distance, same_team])
+                edge_attr.append([relative_x, relative_y, distance, same_team])
                 edge_types.append(PLAYER_PLAYER_EDGE_TYPE)
 
         ball_index = len(players)
         for i, player in enumerate(players):
-            dx = (float(ball["x"]) - float(player["x"])) / width
-            dy = (float(ball["y"]) - float(player["y"])) / height
-            distance = math.sqrt(dx ** 2 + dy ** 2)
+            relative_x = (float(ball["x"]) - float(player["x"])) / width
+            relative_y = (float(ball["y"]) - float(player["y"])) / height
+            distance = math.sqrt(relative_x ** 2 + relative_y ** 2)
 
             edge_list.append([i, ball_index])
-            edge_attr.append([dx, dy, distance, 0.0])
+            edge_attr.append([relative_x, relative_y, distance, 0.0])
             edge_types.append(PLAYER_BALL_EDGE_TYPE)
 
             edge_list.append([ball_index, i])
-            edge_attr.append([-dx, -dy, distance, 0.0])
+            edge_attr.append([-relative_x, -relative_y, distance, 0.0])
             edge_types.append(PLAYER_BALL_EDGE_TYPE)
 
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()

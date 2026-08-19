@@ -1,4 +1,5 @@
 import io
+import math
 import runpy
 from contextlib import redirect_stdout
 
@@ -57,6 +58,25 @@ def test_edge_features_are_normalized_and_non_negative_distance():
     assert torch.all(graph.edge_attr[:, 0].abs() <= 1.0)
     assert torch.all(graph.edge_attr[:, 1].abs() <= 1.0)
     assert torch.all(graph.edge_attr[:, 2] >= 0.0)
+    assert torch.all(graph.edge_attr[:, 2] <= math.sqrt(2.0) + 1e-6)
+
+
+def test_same_team_flag_only_true_for_known_equal_teams():
+    players = [
+        {"id": 1, "x": 100.0, "y": 100.0, "team": 0},
+        {"id": 2, "x": 200.0, "y": 100.0, "team": 0},
+        {"id": 3, "x": 300.0, "y": 100.0, "team": 1},
+        {"id": 4, "x": 400.0, "y": 100.0},
+    ]
+    ball = {"x": 250.0, "y": 125.0}
+    court = {"width": 800, "height": 400, "net_x": 400}
+    graph = VolleyballGraphBuilder().build_graph(players, ball, court)
+
+    same_team_mask = graph.edge_type == PLAYER_PLAYER_EDGE_TYPE
+    same_team_values = graph.edge_attr[same_team_mask, 3]
+    assert torch.all((same_team_values == 1.0) == (same_team_values > 0.5))
+    assert torch.any(same_team_values == 1.0)
+    assert torch.all(same_team_values <= 1.0)
 
 
 def test_opposite_edges_have_opposite_dx_dy():
@@ -110,11 +130,23 @@ def test_variable_player_count_is_supported():
 
 
 def test_player_ids_are_metadata_not_node_features():
-    players, ball, court = create_sample_data()
+    players = [
+        {"id": 101, "x": 100.0, "y": 100.0, "team": 0, "confidence": 0.8},
+        {"id": 202, "x": 200.0, "y": 150.0, "team": 1, "confidence": 0.9},
+        {"id": 303, "x": 300.0, "y": 200.0, "team": 0, "confidence": 0.85},
+    ]
+    ball = {"x": 250.0, "y": 175.0, "confidence": 0.7}
+    court = {"width": 800, "height": 400, "net_x": 400}
     graph = VolleyballGraphBuilder().build_graph(players, ball, court)
+
     assert hasattr(graph, "player_ids")
+    assert graph.player_ids == [101, 202, 303]
     assert len(graph.player_ids) == len(players)
     assert not any(isinstance(v, list) for v in graph.player_ids)
+
+    feature_values = graph.x[: len(players)].detach().cpu().numpy().flatten()
+    for player_id in graph.player_ids:
+        assert not np.any(np.isclose(feature_values, float(player_id)))
 
 
 def test_no_nan_or_inf_values():
