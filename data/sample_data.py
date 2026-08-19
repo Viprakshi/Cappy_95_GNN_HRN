@@ -5,12 +5,44 @@ IMAGE_WIDTH = 1920
 IMAGE_HEIGHT = 1080
 
 
+def build_pose_for_player(player_id: int):
+    """Build a deterministic synthetic 17-keypoint pose for one player."""
+    base_x = 420 + (player_id - 1) * 90
+    base_y = 650 + ((player_id - 1) % 2) * 25
+
+    keypoints = [
+        (base_x, base_y),
+        (base_x - 25, base_y - 40),
+        (base_x + 25, base_y - 40),
+        (base_x - 50, base_y - 80),
+        (base_x + 50, base_y - 80),
+        (base_x - 60, base_y - 150),
+        (base_x + 60, base_y - 150),
+        (base_x - 75, base_y - 220),
+        (base_x + 75, base_y - 220),
+        (base_x - 80, base_y - 260),
+        (base_x + 80, base_y - 260),
+        (base_x - 25, base_y - 300),
+        (base_x + 25, base_y - 300),
+        (base_x - 35, base_y - 360),
+        (base_x + 35, base_y - 360),
+        (base_x - 55, base_y - 420),
+        (base_x + 55, base_y - 420),
+    ]
+
+    flat_pose = []
+    for x, y in keypoints:
+        flat_pose.extend([x, y])
+
+    return np.asarray(flat_pose, dtype=np.float32)
+
+
 def create_sample_data():
     """
-    Creates one synthetic volleyball frame.
+    Create one synthetic volleyball frame with six players and one ball.
 
-    The coordinates are intentionally simple and can later
-    be replaced by real detection/pose outputs.
+    Each player pose is a normalized 17-keypoint representation of the form:
+        [x1, y1, x2, y2, ..., x17, y17]
     """
 
     players = [
@@ -22,7 +54,7 @@ def create_sample_data():
             "vy": -1.0,
             "team": 0,
             "confidence": 0.95,
-            "pose": np.zeros(34, dtype=np.float32),
+            "pose": build_pose_for_player(1),
         },
         {
             "id": 2,
@@ -32,7 +64,7 @@ def create_sample_data():
             "vy": 0.5,
             "team": 0,
             "confidence": 0.94,
-            "pose": np.zeros(34, dtype=np.float32),
+            "pose": build_pose_for_player(2),
         },
         {
             "id": 3,
@@ -42,7 +74,7 @@ def create_sample_data():
             "vy": 0.2,
             "team": 0,
             "confidence": 0.96,
-            "pose": np.zeros(34, dtype=np.float32),
+            "pose": build_pose_for_player(3),
         },
         {
             "id": 4,
@@ -52,7 +84,7 @@ def create_sample_data():
             "vy": 0.5,
             "team": 1,
             "confidence": 0.93,
-            "pose": np.zeros(34, dtype=np.float32),
+            "pose": build_pose_for_player(4),
         },
         {
             "id": 5,
@@ -62,7 +94,7 @@ def create_sample_data():
             "vy": -0.5,
             "team": 1,
             "confidence": 0.95,
-            "pose": np.zeros(34, dtype=np.float32),
+            "pose": build_pose_for_player(5),
         },
         {
             "id": 6,
@@ -72,7 +104,7 @@ def create_sample_data():
             "vy": -1.0,
             "team": 1,
             "confidence": 0.92,
-            "pose": np.zeros(34, dtype=np.float32),
+            "pose": build_pose_for_player(6),
         },
     ]
 
