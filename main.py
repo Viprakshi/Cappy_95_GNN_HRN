@@ -1,4 +1,6 @@
 from data.sample_data import create_sample_data
+from models import GAT
+import torch
 
 from graph.graph_builder import (
     PLAYER_BALL_EDGE_TYPE,
@@ -255,6 +257,77 @@ def main():
 
     visualize_interaction_graph(
         graph
+    )
+
+    # ========================================================
+    # TASK 3 - GRAPH ATTENTION NETWORK
+    # ========================================================
+
+    print(
+        "\n========== GRAPH ATTENTION NETWORK =========="
+    )
+
+    # --------------------------------------------------------
+    # Create GAT
+    # --------------------------------------------------------
+
+    gat = GAT(
+        in_channels=49,
+        hidden_channels=32,
+        out_channels=32,
+        heads=4,
+        dropout=0.2,
+    )
+
+    # --------------------------------------------------------
+    # Generate node embeddings
+    # --------------------------------------------------------
+
+    node_embeddings = gat(
+        graph.x,
+        graph.edge_index,
+        graph.edge_attr,
+    )
+
+    print(
+        "GAT input shape:",
+        graph.x.shape
+    )
+
+    print(
+        "GAT edge index shape:",
+        graph.edge_index.shape
+    )
+
+    print(
+        "GAT edge feature shape:",
+        graph.edge_attr.shape
+    )
+
+    print(
+        "GAT output shape:",
+        node_embeddings.shape
+    )
+
+    print(
+        "Number of attention heads:",
+        4
+    )
+
+    print(
+        "GAT output embedding dimension:",
+        node_embeddings.size(1)
+    )
+
+    print(
+        "GAT output finite:",
+        torch.isfinite(
+            node_embeddings
+        ).all().item()
+    )
+
+    print(
+        "\n========================================"
     )
 
 
