@@ -6,7 +6,7 @@ from torch_geometric.data import Data
 
 
 # ============================================================
-# Feature schema
+# FEATURE GRAPH SCHEMA
 # ============================================================
 
 NUM_POSE_KEYPOINTS = 17
@@ -31,20 +31,33 @@ NODE_FEATURE_DIM = (
     + COURT_FEATURE_DIM
 )
 
+# 2 + 2 + 2 + 2 + 34 + 1 + 1 + 5 = 49
 assert NODE_FEATURE_DIM == 49
 
 
 # ============================================================
-# Node / edge type definitions
+# NODE TYPES
 # ============================================================
 
-# Neural node-type representation
-PLAYER_NODE_TYPE = np.array([1.0, 0.0], dtype=np.float32)
-BALL_NODE_TYPE = np.array([0.0, 1.0], dtype=np.float32)
+# These are included inside the neural node feature vector.
+PLAYER_NODE_TYPE = np.array(
+    [1.0, 0.0],
+    dtype=np.float32
+)
 
-# Metadata edge types
+BALL_NODE_TYPE = np.array(
+    [0.0, 1.0],
+    dtype=np.float32
+)
+
+
+# ============================================================
+# EDGE TYPES
+# ============================================================
+
 PLAYER_PLAYER_EDGE_TYPE = 0
 PLAYER_BALL_EDGE_TYPE = 1
+
 
 # Metadata node types
 PLAYER_NODE_INDEX = 0
@@ -53,63 +66,88 @@ BALL_NODE_INDEX = 1
 
 class VolleyballGraphBuilder:
     """
-    Convert one volleyball frame into a PyTorch Geometric graph.
+    Converts one volleyball frame into a PyTorch Geometric graph.
 
-    Graph structure:
+    ------------------------------------------------------------
+    FEATURE GRAPH
+    ------------------------------------------------------------
 
-        Nodes:
-            - N player nodes
-            - 1 ball node
+    Each player and the ball become a node.
 
-        Edges:
-            - directed player-player edges
-            - bidirectional player-ball edges
+    Each node contains 49 features:
 
-    Node feature dimension:
-        49
+        0-1     node type
+        2-3     normalized position
+        4-5     normalized velocity
+        6-7     team one-hot
+        8-41    17 pose keypoints x 2 coordinates
+        42      pose availability
+        43      detection confidence
+        44-48   court-relative features
 
-    Edge feature dimension:
-        4
+    ------------------------------------------------------------
+    INTERACTION GRAPH
+    ------------------------------------------------------------
 
-    Node features:
-        2   node type
-        2   normalized position
-        2   normalized velocity
-        2   team one-hot
-        34  pose (17 keypoints x 2)
-        1   pose availability
-        1   detection confidence
-        5   court-relative features
+    Directed edges are created between:
+
+        player -> player
+        player -> ball
+        ball -> player
+
+    Every edge contains:
+
+        relative_x
+        relative_y
+        distance
+        same_team
+
+    ------------------------------------------------------------
     """
 
     def __init__(self):
         self.feature_dim = NODE_FEATURE_DIM
 
     # ========================================================
-    # Validation
+    # INPUT VALIDATION
     # ========================================================
 
-    def validate_frame_inputs(self, players, ball, court):
-        """Validate basic frame inputs before graph creation."""
+    def validate_frame_inputs(
+        self,
+        players,
+        ball,
+        court
+    ):
+        """
+        Validate the basic information required to construct
+        a graph for one frame.
+        """
 
-        if not isinstance(players, (list, tuple)):
+        if not isinstance(
+            players,
+            (list, tuple)
+        ):
             raise ValueError(
-                "players must be a list or tuple of player dictionaries."
+                "players must be a list or tuple "
+                "of player dictionaries."
             )
 
         if len(players) == 0:
             raise ValueError(
-                "players must contain at least one detected player."
+                "players must contain at least "
+                "one detected player."
             )
 
         if not isinstance(ball, dict):
             raise ValueError(
-                "ball must be a dictionary with x and y coordinates."
+                "ball must be a dictionary "
+                "with x and y coordinates."
             )
 
         if not isinstance(court, dict):
             raise ValueError(
-                "court must be a dictionary with width and height."
+                "court must be a dictionary "
+                "with width and height."
             )
 
         width = court.get("width")
@@ -122,32 +160,50 @@ class VolleyballGraphBuilder:
 
         if float(width) <= 0 or float(height) <= 0:
             raise ValueError(
-                "court width and height must be positive numbers."
+                "court width and height must be positive."
             )
 
+        # ----------------------------------------------------
         # Validate players
+        # ----------------------------------------------------
+
         for idx, player in enumerate(players):
 
             if not isinstance(player, dict):
                 raise ValueError(
-                    f"Player at index {idx} is not a dictionary."
+                    f"Player at index {idx} "
+                    f"is not a dictionary."
                 )
 
-            if "x" not in player or "y" not in player:
+            if (
+                "x" not in player
+                or "y" not in player
+            ):
                 raise ValueError(
-                    f"Player at index {idx} is missing x or y coordinates."
+                    f"Player at index {idx} "
+                    f"is missing x or y coordinates."
                 )
 
             x = float(player["x"])
             y = float(player["y"])
 
-            if not np.isfinite(x) or not np.isfinite(y):
+            if (
+                not np.isfinite(x)
+                or not np.isfinite(y)
+            ):
                 raise ValueError(
-                    f"Player at index {idx} has non-finite coordinates."
+                    f"Player at index {idx} "
+                    f"has non-finite coordinates."
                 )
 
+        # ----------------------------------------------------
         # Validate ball
-        if "x" not in ball or "y" not in ball:
+        # ----------------------------------------------------
+
+        if (
+            "x" not in ball
+            or "y" not in ball
+        ):
             raise ValueError(
                 "Ball is missing x or y coordinates."
             )
@@ -155,18 +211,27 @@ class VolleyballGraphBuilder:
         ball_x = float(ball["x"])
         ball_y = float(ball["y"])
 
-        if not np.isfinite(ball_x) or not np.isfinite(ball_y):
+        if (
+            not np.isfinite(ball_x)
+            or not np.isfinite(ball_y)
+        ):
             raise ValueError(
                 "Ball has non-finite coordinates."
             )
 
     # ========================================================
-    # Normalization
+    # NORMALIZATION
     # ========================================================
 
-    def normalize_position(self, x, y, width, height):
+    def normalize_position(
+        self,
+        x,
+        y,
+        width,
+        height
+    ):
         """
-        Convert image coordinates to normalized [0, 1] coordinates.
+        Convert image coordinates to [0, 1].
         """
 
         x_norm = np.clip(
@@ -183,34 +248,54 @@ class VolleyballGraphBuilder:
 
         return x_norm, y_norm
 
-    def normalize_velocity(self, vx, vy, width, height):
+    def normalize_velocity(
+        self,
+        vx,
+        vy,
+        width,
+        height
+    ):
         """
-        Convert image-space velocity to normalized velocity.
-
-        Velocity is normalized using image width and height.
+        Normalize image-space velocity.
         """
 
-        vx_norm = float(vx) / float(width)
-        vy_norm = float(vy) / float(height)
+        vx_norm = (
+            float(vx)
+            / float(width)
+        )
+
+        vy_norm = (
+            float(vy)
+            / float(height)
+        )
 
         return vx_norm, vy_norm
 
-    def normalize_pose(self, pose, width, height):
+    # ========================================================
+    # POSE
+    # ========================================================
+
+    def normalize_pose(
+        self,
+        pose,
+        width,
+        height
+    ):
         """
         Normalize a 17-keypoint pose.
 
-        Expected input:
+        Expected:
 
             [x1, y1, x2, y2, ..., x17, y17]
 
         Total = 34 values.
 
         Returns:
+
             normalized_pose
             pose_available
         """
 
-        # No pose detected
         if pose is None:
             return (
                 np.zeros(
@@ -225,7 +310,6 @@ class VolleyballGraphBuilder:
             dtype=np.float32
         ).reshape(-1)
 
-        # Empty pose
         if pose_array.size == 0:
             return (
                 np.zeros(
@@ -235,7 +319,6 @@ class VolleyballGraphBuilder:
                 0.0
             )
 
-        # Incorrect pose dimension
         if pose_array.size != POSE_FEATURE_DIM:
             raise ValueError(
                 f"Pose must contain exactly "
@@ -244,7 +327,9 @@ class VolleyballGraphBuilder:
                 f"but got {pose_array.size}."
             )
 
-        if not np.isfinite(pose_array).all():
+        if not np.isfinite(
+            pose_array
+        ).all():
             raise ValueError(
                 "Pose contains non-finite values."
             )
@@ -254,41 +339,38 @@ class VolleyballGraphBuilder:
             2
         ).copy()
 
-        # Normalize x coordinates
         pose_xy[:, 0] = np.clip(
-            pose_xy[:, 0] / float(width),
+            pose_xy[:, 0]
+            / float(width),
             0.0,
             1.0
         )
 
-        # Normalize y coordinates
         pose_xy[:, 1] = np.clip(
-            pose_xy[:, 1] / float(height),
+            pose_xy[:, 1]
+            / float(height),
             0.0,
             1.0
         )
 
         return (
-            pose_xy.reshape(-1).astype(np.float32),
+            pose_xy.reshape(-1)
+            .astype(np.float32),
             1.0
         )
 
     # ========================================================
-    # Team
+    # TEAM
     # ========================================================
 
-    def get_team_features(self, team):
+    def get_team_features(
+        self,
+        team
+    ):
         """
-        Encode team identity as one-hot.
-
-        Team 0:
-            [1, 0]
-
-        Team 1:
-            [0, 1]
-
-        Unknown:
-            [0, 0]
+        Team 0 -> [1, 0]
+        Team 1 -> [0, 1]
+        Unknown -> [0, 0]
         """
 
         if team == 0:
@@ -309,24 +391,32 @@ class VolleyballGraphBuilder:
         )
 
     # ========================================================
-    # Court features
+    # COURT FEATURES
     # ========================================================
 
-    def get_court_features(self, x, y, court):
+    def get_court_features(
+        self,
+        x,
+        y,
+        court
+    ):
         """
-        Calculate normalized court-relative features.
+        Five normalized court-context features:
 
-        Features:
-
-            1. distance_left
-            2. distance_right
-            3. distance_top
-            4. distance_bottom
-            5. distance_net
+            1. distance from left boundary
+            2. distance from right boundary
+            3. distance from top boundary
+            4. distance from bottom boundary
+            5. distance from net
         """
 
-        width = float(court["width"])
-        height = float(court["height"])
+        width = float(
+            court["width"]
+        )
+
+        height = float(
+            court["height"]
+        )
 
         net_x = float(
             court.get(
@@ -342,7 +432,8 @@ class VolleyballGraphBuilder:
         )
 
         distance_right = np.clip(
-            (width - float(x)) / width,
+            (width - float(x))
+            / width,
             0.0,
             1.0
         )
@@ -354,13 +445,16 @@ class VolleyballGraphBuilder:
         )
 
         distance_bottom = np.clip(
-            (height - float(y)) / height,
+            (height - float(y))
+            / height,
             0.0,
             1.0
         )
 
         distance_net = np.clip(
-            abs(float(x) - net_x) / width,
+            abs(
+                float(x) - net_x
+            ) / width,
             0.0,
             1.0
         )
@@ -377,71 +471,92 @@ class VolleyballGraphBuilder:
         )
 
     # ========================================================
-    # Player features
+    # PLAYER FEATURE VECTOR
     # ========================================================
 
-    def build_player_features(self, player, court):
+    def build_player_features(
+        self,
+        player,
+        court
+    ):
         """
-        Create the 49-dimensional feature vector for a player.
+        Build the complete 49-dimensional
+        feature vector for one player.
         """
 
-        width = float(court["width"])
-        height = float(court["height"])
+        width = float(
+            court["width"]
+        )
 
-        x = float(player["x"])
-        y = float(player["y"])
+        height = float(
+            court["height"]
+        )
 
-        if not np.isfinite(x) or not np.isfinite(y):
-            raise ValueError(
-                f"Player {player.get('id', 'unknown')} "
-                f"has invalid coordinates."
-            )
+        x = float(
+            player["x"]
+        )
+
+        y = float(
+            player["y"]
+        )
 
         # Position
-        x_norm, y_norm = self.normalize_position(
-            x,
-            y,
-            width,
-            height
+        x_norm, y_norm = (
+            self.normalize_position(
+                x,
+                y,
+                width,
+                height
+            )
         )
 
         # Velocity
-        vx_norm, vy_norm = self.normalize_velocity(
-            player.get("vx", 0.0),
-            player.get("vy", 0.0),
-            width,
-            height
+        vx_norm, vy_norm = (
+            self.normalize_velocity(
+                player.get("vx", 0.0),
+                player.get("vy", 0.0),
+                width,
+                height
+            )
         )
 
         # Team
-        team_features = self.get_team_features(
-            player.get("team")
+        team_features = (
+            self.get_team_features(
+                player.get("team")
+            )
         )
 
         # Pose
-        pose, pose_available = self.normalize_pose(
-            player.get("pose"),
-            width,
-            height
+        pose, pose_available = (
+            self.normalize_pose(
+                player.get("pose"),
+                width,
+                height
+            )
         )
 
         # Detection confidence
         confidence = float(
             np.clip(
-                player.get("confidence", 0.0),
+                player.get(
+                    "confidence",
+                    0.0
+                ),
                 0.0,
                 1.0
             )
         )
 
-        # Court context
-        court_features = self.get_court_features(
-            x,
-            y,
-            court
+        # Court
+        court_features = (
+            self.get_court_features(
+                x,
+                y,
+                court
+            )
         )
 
-        # Construct feature vector
         feature_vector = np.concatenate(
             [
                 PLAYER_NODE_TYPE,
@@ -474,52 +589,64 @@ class VolleyballGraphBuilder:
             ]
         ).astype(np.float32)
 
-        if feature_vector.shape[0] != self.feature_dim:
-            raise ValueError(
-                f"Player feature size mismatch: "
-                f"expected {self.feature_dim}, "
-                f"got {feature_vector.shape[0]}."
-            )
+        assert (
+            feature_vector.shape[0]
+            == NODE_FEATURE_DIM
+        )
 
         return feature_vector
 
     # ========================================================
-    # Ball features
+    # BALL FEATURE VECTOR
     # ========================================================
 
-    def build_ball_features(self, ball, court):
+    def build_ball_features(
+        self,
+        ball,
+        court
+    ):
         """
-        Create the 49-dimensional feature vector for the ball.
+        Build the same 49-dimensional
+        representation for the ball.
 
-        Ball-specific fields such as team and pose are represented
-        using zero values.
+        Features that do not apply to the ball
+        are represented by zeros.
         """
 
-        width = float(court["width"])
-        height = float(court["height"])
+        width = float(
+            court["width"]
+        )
 
-        x = float(ball["x"])
-        y = float(ball["y"])
+        height = float(
+            court["height"]
+        )
 
-        if not np.isfinite(x) or not np.isfinite(y):
-            raise ValueError(
-                "Ball has invalid coordinates."
-            )
+        x = float(
+            ball["x"]
+        )
+
+        y = float(
+            ball["y"]
+        )
 
         # Position
-        x_norm, y_norm = self.normalize_position(
-            x,
-            y,
-            width,
-            height
+        x_norm, y_norm = (
+            self.normalize_position(
+                x,
+                y,
+                width,
+                height
+            )
         )
 
         # Velocity
-        vx_norm, vy_norm = self.normalize_velocity(
-            ball.get("vx", 0.0),
-            ball.get("vy", 0.0),
-            width,
-            height
+        vx_norm, vy_norm = (
+            self.normalize_velocity(
+                ball.get("vx", 0.0),
+                ball.get("vy", 0.0),
+                width,
+                height
+            )
         )
 
         # Ball has no team
@@ -539,20 +666,24 @@ class VolleyballGraphBuilder:
         # Confidence
         confidence = float(
             np.clip(
-                ball.get("confidence", 0.0),
+                ball.get(
+                    "confidence",
+                    0.0
+                ),
                 0.0,
                 1.0
             )
         )
 
-        # Court context
-        court_features = self.get_court_features(
-            x,
-            y,
-            court
+        # Court
+        court_features = (
+            self.get_court_features(
+                x,
+                y,
+                court
+            )
         )
 
-        # Construct feature vector
         feature_vector = np.concatenate(
             [
                 BALL_NODE_TYPE,
@@ -585,79 +716,87 @@ class VolleyballGraphBuilder:
             ]
         ).astype(np.float32)
 
-        if feature_vector.shape[0] != self.feature_dim:
-            raise ValueError(
-                f"Ball feature size mismatch: "
-                f"expected {self.feature_dim}, "
-                f"got {feature_vector.shape[0]}."
-            )
+        assert (
+            feature_vector.shape[0]
+            == NODE_FEATURE_DIM
+        )
 
         return feature_vector
 
     # ========================================================
-    # Edge construction
+    # INTERACTION GRAPH
     # ========================================================
 
-    def build_edges(self, players, ball, court):
+    def build_edges(
+        self,
+        players,
+        ball,
+        court
+    ):
         """
-        Build all directed graph edges.
+        Build the interaction graph.
 
-        Player-player:
-            N * (N - 1)
+        For N players:
 
-        Player-ball:
-            2N
+            Player-player:
+                N * (N - 1)
 
-        Total:
-            N * (N + 1)
+            Player-ball:
+                2N
 
-        Edge features:
+        For six players:
 
-            relative_x
-            relative_y
-            distance
-            same_team
+            30 player-player
+            12 player-ball
+            ----------------
+            42 total edges
 
-        relative_x and relative_y are normalized using court
-        dimensions.
+        Each edge has four features:
 
-        Distance is:
-
-            sqrt(relative_x^2 + relative_y^2)
-
-        and therefore can range approximately from 0 to sqrt(2).
+            [relative_x,
+             relative_y,
+             distance,
+             same_team]
         """
 
         edge_list = []
         edge_attributes = []
         edge_types = []
 
-        width = float(court["width"])
-        height = float(court["height"])
+        width = float(
+            court["width"]
+        )
+
+        height = float(
+            court["height"]
+        )
 
         # ----------------------------------------------------
-        # Player-player edges
+        # PLAYER ↔ PLAYER
         # ----------------------------------------------------
 
-        for i in range(len(players)):
+        for i in range(
+            len(players)
+        ):
 
-            for j in range(len(players)):
+            for j in range(
+                len(players)
+            ):
 
-                # No self loops
                 if i == j:
                     continue
 
-                source_player = players[i]
-                target_player = players[j]
+                source = players[i]
+                target = players[j]
 
                 relative_x = (
-                    float(target_player["x"])
-                    - float(source_player["x"])
+                    float(target["x"])
+                    - float(source["x"])
                 ) / width
 
                 relative_y = (
-                    float(target_player["y"])
-                    - float(source_player["y"])
+                    float(target["y"])
+                    - float(source["y"])
                 ) / height
 
                 distance = math.sqrt(
@@ -665,9 +804,13 @@ class VolleyballGraphBuilder:
                     + relative_y ** 2
                 )
 
-                # Correct unknown-team handling
-                team_a = source_player.get("team")
-                team_b = target_player.get("team")
+                team_a = source.get(
+                    "team"
+                )
+
+                team_b = target.get(
+                    "team"
+                )
 
                 if (
                     team_a in (0, 1)
@@ -688,7 +831,7 @@ class VolleyballGraphBuilder:
                         relative_x,
                         relative_y,
                         distance,
-                        same_team,
+                        same_team
                     ]
                 )
 
@@ -697,12 +840,14 @@ class VolleyballGraphBuilder:
                 )
 
         # ----------------------------------------------------
-        # Player-ball edges
+        # PLAYER ↔ BALL
         # ----------------------------------------------------
 
         ball_index = len(players)
 
-        for i, player in enumerate(players):
+        for i, player in enumerate(
+            players
+        ):
 
             relative_x = (
                 float(ball["x"])
@@ -729,7 +874,7 @@ class VolleyballGraphBuilder:
                     relative_x,
                     relative_y,
                     distance,
-                    0.0,
+                    0.0
                 ]
             )
 
@@ -747,17 +892,13 @@ class VolleyballGraphBuilder:
                     -relative_x,
                     -relative_y,
                     distance,
-                    0.0,
+                    0.0
                 ]
             )
 
             edge_types.append(
                 PLAYER_BALL_EDGE_TYPE
             )
-
-        # ----------------------------------------------------
-        # Convert to tensors
-        # ----------------------------------------------------
 
         edge_index = torch.tensor(
             edge_list,
@@ -781,64 +922,111 @@ class VolleyballGraphBuilder:
         )
 
     # ========================================================
-    # Graph validation
+    # GRAPH VALIDATION
     # ========================================================
 
-    def validate_graph(self, graph):
+    def validate_graph(
+        self,
+        graph
+    ):
         """
-        Validate the structural integrity of the graph.
+        Validate the final feature + interaction graph.
         """
 
-        # Node features
+        # Node feature graph
         assert graph.x.dim() == 2
-        assert graph.x.size(1) == NODE_FEATURE_DIM
 
-        # Edge index
+        assert (
+            graph.x.size(1)
+            == NODE_FEATURE_DIM
+        )
+
+        # Interaction graph
         assert graph.edge_index.dim() == 2
-        assert graph.edge_index.size(0) == 2
 
-        # Edge attributes
+        assert (
+            graph.edge_index.size(0)
+            == 2
+        )
+
+        # Edge feature graph
         assert graph.edge_attr.dim() == 2
-        assert graph.edge_attr.size(0) == graph.edge_index.size(1)
-        assert graph.edge_attr.size(1) == 4
+
+        assert (
+            graph.edge_attr.size(0)
+            == graph.edge_index.size(1)
+        )
+
+        assert (
+            graph.edge_attr.size(1)
+            == 4
+        )
 
         # Edge types
         assert graph.edge_type.dim() == 1
-        assert graph.edge_type.size(0) == graph.edge_index.size(1)
+
+        assert (
+            graph.edge_type.size(0)
+            == graph.edge_index.size(1)
+        )
 
         # Node types
         assert graph.node_type.dim() == 1
-        assert graph.node_type.size(0) == graph.num_nodes
+
+        assert (
+            graph.node_type.size(0)
+            == graph.num_nodes
+        )
 
         # Valid node types
         assert torch.all(
-            (graph.node_type == PLAYER_NODE_INDEX)
-            | (graph.node_type == BALL_NODE_INDEX)
+            (
+                graph.node_type
+                == PLAYER_NODE_INDEX
+            )
+            |
+            (
+                graph.node_type
+                == BALL_NODE_INDEX
+            )
         )
 
         # Valid edge types
         assert torch.all(
-            (graph.edge_type == PLAYER_PLAYER_EDGE_TYPE)
-            | (graph.edge_type == PLAYER_BALL_EDGE_TYPE)
+            (
+                graph.edge_type
+                == PLAYER_PLAYER_EDGE_TYPE
+            )
+            |
+            (
+                graph.edge_type
+                == PLAYER_BALL_EDGE_TYPE
+            )
         )
 
-        # No NaN / Inf
-        assert torch.isfinite(graph.x).all()
-        assert torch.isfinite(graph.edge_attr).all()
+        # Numerical safety
+        assert torch.isfinite(
+            graph.x
+        ).all()
 
-        # Valid edge indices
+        assert torch.isfinite(
+            graph.edge_attr
+        ).all()
+
+        # Edge indices must be valid
         assert torch.all(
             graph.edge_index >= 0
         )
 
         assert torch.all(
-            graph.edge_index < graph.num_nodes
+            graph.edge_index
+            < graph.num_nodes
         )
 
         return True
 
     # ========================================================
-    # Graph construction
+    # COMPLETE GRAPH
     # ========================================================
 
     def build_graph(
@@ -850,8 +1038,7 @@ class VolleyballGraphBuilder:
         timestamp=None
     ):
         """
-        Construct a complete PyTorch Geometric graph
-        for one volleyball frame.
+        Build the complete graph for one frame.
         """
 
         self.validate_frame_inputs(
@@ -861,7 +1048,7 @@ class VolleyballGraphBuilder:
         )
 
         # ----------------------------------------------------
-        # Player metadata
+        # Metadata
         # ----------------------------------------------------
 
         player_ids = [
@@ -869,17 +1056,17 @@ class VolleyballGraphBuilder:
                 "id",
                 idx
             )
-            for idx, player in enumerate(players)
+            for idx, player
+            in enumerate(players)
         ]
 
         # ----------------------------------------------------
-        # Node features
+        # FEATURE GRAPH / NODES
         # ----------------------------------------------------
 
         node_features = []
         node_types = []
 
-        # Players
         for player in players:
 
             node_features.append(
@@ -893,7 +1080,7 @@ class VolleyballGraphBuilder:
                 PLAYER_NODE_INDEX
             )
 
-        # Ball
+        # Ball is the final node
         node_features.append(
             self.build_ball_features(
                 ball,
@@ -905,7 +1092,6 @@ class VolleyballGraphBuilder:
             BALL_NODE_INDEX
         )
 
-        # Convert nodes to tensor
         x = torch.tensor(
             np.asarray(
                 node_features,
@@ -915,7 +1101,7 @@ class VolleyballGraphBuilder:
         )
 
         # ----------------------------------------------------
-        # Edges
+        # INTERACTION GRAPH / EDGES
         # ----------------------------------------------------
 
         (
@@ -929,7 +1115,7 @@ class VolleyballGraphBuilder:
         )
 
         # ----------------------------------------------------
-        # Create PyG graph
+        # PYTORCH GEOMETRIC DATA
         # ----------------------------------------------------
 
         graph = Data(
@@ -938,7 +1124,6 @@ class VolleyballGraphBuilder:
             edge_attr=edge_attr
         )
 
-        # Metadata
         graph.edge_type = edge_type
 
         graph.node_type = torch.tensor(
@@ -948,7 +1133,9 @@ class VolleyballGraphBuilder:
 
         graph.player_ids = player_ids
 
-        graph.ball_index = len(players)
+        graph.ball_index = len(
+            players
+        )
 
         if frame_id is not None:
             graph.frame_id = frame_id
@@ -956,10 +1143,7 @@ class VolleyballGraphBuilder:
         if timestamp is not None:
             graph.timestamp = timestamp
 
-        # ----------------------------------------------------
-        # Validate final graph
-        # ----------------------------------------------------
-
+        # Final validation
         self.validate_graph(
             graph
         )
