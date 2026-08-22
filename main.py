@@ -1,5 +1,5 @@
 from data.sample_data import create_sample_data
-from models import GAT
+from models import GAT, HRN
 import torch
 
 from graph.graph_builder import (
@@ -329,7 +329,102 @@ def main():
     print(
         "\n========================================"
     )
+    # ========================================================
+    # TASK 4 - HIERARCHICAL RELATION NETWORK
+    # ========================================================
 
+    print(
+        "\n========== HIERARCHICAL RELATION NETWORK =========="
+    )
+
+    # --------------------------------------------------------
+    # Create HRN
+    # --------------------------------------------------------
+
+    hrn = HRN(
+        in_channels=49,
+        hidden_channels=32,
+        out_channels=32,
+        heads=4,
+        dropout=0.2,
+    )
+    
+
+    # --------------------------------------------------------
+    # Forward pass
+    #
+    # HRN internally performs:
+    #
+    # Graph
+    #   ↓
+    # GAT
+    #   ↓
+    # Node representations
+    #   ↓
+    # Team representations
+    #   ↓
+    # Global representation
+    # --------------------------------------------------------
+
+    hrn_output = hrn(
+        graph.x,
+        graph.edge_index,
+        graph.edge_attr,
+        graph.node_type,
+        graph.node_team,
+    )
+    node_embeddings_hrn = (
+        hrn_output["node_embeddings"]
+    )
+
+    team_embeddings = (
+        hrn_output["team_embeddings"]
+    )
+
+    global_embedding = (
+        hrn_output["global_embedding"]
+    )
+
+    # --------------------------------------------------------
+    # Print hierarchy
+    # --------------------------------------------------------
+
+    print(
+        "\nHRN hierarchy:"
+    )
+
+    print(
+        "Graph:",
+        graph.x.shape
+    )
+
+    print(
+        "GAT node embeddings:",
+        node_embeddings_hrn.shape
+    )
+
+    print(
+        "Team-level embeddings:",
+        team_embeddings.shape
+    )
+
+    print(
+        "Global embedding:",
+        global_embedding.shape
+    )
+
+    print(
+        "\nHRN architecture:"
+    )
+
+    print(
+        "Graph -> GAT -> Node representations "
+        "-> Team representations -> Global representation"
+    )
+
+    print(
+        "\n========================================"
+    )
 
 if __name__ == "__main__":
     main()

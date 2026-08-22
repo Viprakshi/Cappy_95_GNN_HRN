@@ -40,6 +40,7 @@ assert NODE_FEATURE_DIM == 49
 # ============================================================
 
 # These are included inside the neural node feature vector.
+
 PLAYER_NODE_TYPE = np.array(
     [1.0, 0.0],
     dtype=np.float32
@@ -59,7 +60,10 @@ PLAYER_PLAYER_EDGE_TYPE = 0
 PLAYER_BALL_EDGE_TYPE = 1
 
 
-# Metadata node types
+# ============================================================
+# METADATA NODE TYPES
+# ============================================================
+
 PLAYER_NODE_INDEX = 0
 BALL_NODE_INDEX = 1
 
@@ -68,9 +72,9 @@ class VolleyballGraphBuilder:
     """
     Converts one volleyball frame into a PyTorch Geometric graph.
 
-    ------------------------------------------------------------
+    ============================================================
     FEATURE GRAPH
-    ------------------------------------------------------------
+    ============================================================
 
     Each player and the ball become a node.
 
@@ -85,9 +89,9 @@ class VolleyballGraphBuilder:
         43      detection confidence
         44-48   court-relative features
 
-    ------------------------------------------------------------
+    ============================================================
     INTERACTION GRAPH
-    ------------------------------------------------------------
+    ============================================================
 
     Directed edges are created between:
 
@@ -102,7 +106,7 @@ class VolleyballGraphBuilder:
         distance
         same_team
 
-    ------------------------------------------------------------
+    ============================================================
     """
 
     def __init__(self):
@@ -933,7 +937,10 @@ class VolleyballGraphBuilder:
         Validate the final feature + interaction graph.
         """
 
+        # ----------------------------------------------------
         # Node feature graph
+        # ----------------------------------------------------
+
         assert graph.x.dim() == 2
 
         assert (
@@ -941,7 +948,10 @@ class VolleyballGraphBuilder:
             == NODE_FEATURE_DIM
         )
 
+        # ----------------------------------------------------
         # Interaction graph
+        # ----------------------------------------------------
+
         assert graph.edge_index.dim() == 2
 
         assert (
@@ -949,7 +959,10 @@ class VolleyballGraphBuilder:
             == 2
         )
 
+        # ----------------------------------------------------
         # Edge feature graph
+        # ----------------------------------------------------
+
         assert graph.edge_attr.dim() == 2
 
         assert (
@@ -962,7 +975,10 @@ class VolleyballGraphBuilder:
             == 4
         )
 
+        # ----------------------------------------------------
         # Edge types
+        # ----------------------------------------------------
+
         assert graph.edge_type.dim() == 1
 
         assert (
@@ -970,7 +986,10 @@ class VolleyballGraphBuilder:
             == graph.edge_index.size(1)
         )
 
+        # ----------------------------------------------------
         # Node types
+        # ----------------------------------------------------
+
         assert graph.node_type.dim() == 1
 
         assert (
@@ -978,7 +997,46 @@ class VolleyballGraphBuilder:
             == graph.num_nodes
         )
 
+        # ----------------------------------------------------
+        # Node teams
+        # ----------------------------------------------------
+
+        assert hasattr(
+            graph,
+            "node_team"
+        )
+
+        assert graph.node_team.dim() == 1
+
+        assert (
+            graph.node_team.size(0)
+            == graph.num_nodes
+        )
+
+        # Valid team values:
+        #
+        # 0 = Team 0
+        # 1 = Team 1
+        # -1 = Ball / no team
+
+        assert torch.all(
+            (
+                graph.node_team == 0
+            )
+            |
+            (
+                graph.node_team == 1
+            )
+            |
+            (
+                graph.node_team == -1
+            )
+        )
+
+        # ----------------------------------------------------
         # Valid node types
+        # ----------------------------------------------------
+
         assert torch.all(
             (
                 graph.node_type
@@ -991,7 +1049,10 @@ class VolleyballGraphBuilder:
             )
         )
 
+        # ----------------------------------------------------
         # Valid edge types
+        # ----------------------------------------------------
+
         assert torch.all(
             (
                 graph.edge_type
@@ -1004,7 +1065,10 @@ class VolleyballGraphBuilder:
             )
         )
 
+        # ----------------------------------------------------
         # Numerical safety
+        # ----------------------------------------------------
+
         assert torch.isfinite(
             graph.x
         ).all()
@@ -1013,7 +1077,10 @@ class VolleyballGraphBuilder:
             graph.edge_attr
         ).all()
 
+        # ----------------------------------------------------
         # Edge indices must be valid
+        # ----------------------------------------------------
+
         assert torch.all(
             graph.edge_index >= 0
         )
@@ -1066,9 +1133,15 @@ class VolleyballGraphBuilder:
 
         node_features = []
         node_types = []
+        node_teams = []
+
+        # ----------------------------------------------------
+        # PLAYER NODES
+        # ----------------------------------------------------
 
         for player in players:
 
+            # 49-dimensional player feature vector
             node_features.append(
                 self.build_player_features(
                     player,
@@ -1076,11 +1149,36 @@ class VolleyballGraphBuilder:
                 )
             )
 
+            # Metadata node type
             node_types.append(
                 PLAYER_NODE_INDEX
             )
 
-        # Ball is the final node
+            # ------------------------------------------------
+            # IMPORTANT:
+            # Store the actual team ID separately.
+            #
+            # Team 0 -> 0
+            # Team 1 -> 1
+            # Unknown -> -1
+            # ------------------------------------------------
+
+            team = player.get(
+                "team",
+                -1
+            )
+
+            if team not in (0, 1):
+                team = -1
+
+            node_teams.append(
+                int(team)
+            )
+
+        # ----------------------------------------------------
+        # BALL NODE
+        # ----------------------------------------------------
+
         node_features.append(
             self.build_ball_features(
                 ball,
@@ -1091,6 +1189,13 @@ class VolleyballGraphBuilder:
         node_types.append(
             BALL_NODE_INDEX
         )
+
+        # Ball does not belong to a team.
+        node_teams.append(-1)
+
+        # ----------------------------------------------------
+        # NODE FEATURE TENSOR
+        # ----------------------------------------------------
 
         x = torch.tensor(
             np.asarray(
@@ -1124,10 +1229,29 @@ class VolleyballGraphBuilder:
             edge_attr=edge_attr
         )
 
+        # Edge metadata
         graph.edge_type = edge_type
 
+        # Node metadata
         graph.node_type = torch.tensor(
             node_types,
+            dtype=torch.long
+        )
+
+        # ----------------------------------------------------
+        # THIS IS THE IMPORTANT TASK 4 FIX
+        #
+        # For 6 players + 1 ball:
+        #
+        # node_team =
+        # [0, 0, 0, 1, 1, 1, -1]
+        #
+        # Shape:
+        # [7]
+        # ----------------------------------------------------
+
+        graph.node_team = torch.tensor(
+            node_teams,
             dtype=torch.long
         )
 
@@ -1143,7 +1267,10 @@ class VolleyballGraphBuilder:
         if timestamp is not None:
             graph.timestamp = timestamp
 
-        # Final validation
+        # ----------------------------------------------------
+        # FINAL VALIDATION
+        # ----------------------------------------------------
+
         self.validate_graph(
             graph
         )
